@@ -4,7 +4,7 @@ import psycopg2
 DB_CONFIG = {
     "dbname": "poc",
     "user": "postgres",
-    "password": "Gram@2958",  # <--- REPLACE THIS
+    "password": "",  # <--- REPLACE THIS
     "host": "localhost",
     "port": "5432"
 }

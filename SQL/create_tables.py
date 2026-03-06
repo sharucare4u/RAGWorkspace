@@ -9,7 +9,7 @@ from datetime import date, timedelta
 DB_CONFIG = {
     "dbname": "poc",     
     "user": "postgres",       
-    "password": "Gram@2958",   
+    "password": "",   
     "host": "localhost",
     "port": "5432"
 }

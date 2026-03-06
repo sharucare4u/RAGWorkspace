@@ -5,7 +5,7 @@ from openai import OpenAI
 DB_CONFIG = {
     "dbname": "poc",
     "user": "postgres",
-    "password": "Gram@2958",  # <--- REPLACE THIS
+    "password": "",  # <--- REPLACE THIS
     "host": "localhost",
     "port": "5432"
 }
@@ -60,9 +60,10 @@ def text_to_sql_pipeline(user_question):
 
     RULES:
     1. Return ONLY the SQL query. No markdown, no explanations.
-    2. Use valid PostgreSQL syntax.
-    3. Use join to combine tables if needed.
-    4. If questions are asked about departments/roles always group them.
+    2. Do not write complex SQL queries if the question is simple. Always prefer simplicity.
+    3. Use valid PostgreSQL syntax.
+    4. Use join to combine tables if needed.
+    5. If questions are asked about departments/roles always group them.
     
     User Question: {user_question}
     """
