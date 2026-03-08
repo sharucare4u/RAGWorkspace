@@ -14,7 +14,7 @@ from SQL.sql_retrieval import text_to_sql_pipeline
 from Vector_DB.chat import query_vector_db
 from Logs import logs
 
-client = OpenAI(base_url="http://127.0.0.1:1234/v1/", api_key="lm-studio")
+client = OpenAI(base_url="http://localhost:11434/v1/", api_key="ollama")
 
 
 # ── Router ─────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ def decide_route(question: str) -> str:
     Output ONLY the category name: SQL, VECTOR, or BOTH.
     """
     response = client.chat.completions.create(
-        model="mistral-7b-instruct",
+        model="gpt-oss:20b-cloud",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1
     )
@@ -72,7 +72,7 @@ def decompose_query(complex_question: str):
     VECTOR: [Insert Vector-focused question]
     """
     response = client.chat.completions.create(
-        model="mistral-7b-instruct",
+        model="gpt-oss:20b-cloud",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1
     )
@@ -115,7 +115,7 @@ def synthesize_answer(user_input: str, final_context: str) -> str:
     - Use markdown formatting (bold, lists, tables) for clarity.
     """
     response = client.chat.completions.create(
-        model="mistral-7b-instruct",
+        model="gpt-oss:20b-cloud",
         messages=[{"role": "user", "content": synth_prompt}],
         temperature=0.7
     )

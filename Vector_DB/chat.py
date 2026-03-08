@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _POC_ROOT = os.path.dirname(_THIS_DIR)
 DB_PATH = os.path.join(_POC_ROOT, "chroma_db_local")
-LM_STUDIO_URL = "http://127.0.0.1:1234/v1/"
+OLLAMA_URL = "http://localhost:11434/v1/"
 
 # --- INITIALIZATION (Runs once when imported) ---
 print(f"   (Vector Module) ChromaDB path resolved to: {DB_PATH}")
@@ -27,10 +27,11 @@ else:
         embedding_function=embedding_function
     )
 
-print(f"   (Vector Module) Connecting to LLM at {LM_STUDIO_URL}...")
+print(f"   (Vector Module) Connecting to LLM at {OLLAMA_URL}...")
 llm = ChatOpenAI(
-    base_url=LM_STUDIO_URL,
-    api_key="lm-studio",
+    base_url=OLLAMA_URL,
+    model="gpt-oss:20b-cloud",
+    api_key="ollama",
     temperature=0.0
 )
 
