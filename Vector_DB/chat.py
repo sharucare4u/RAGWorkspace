@@ -31,6 +31,7 @@ print(f"   (Vector Module) Connecting to LLM at {OLLAMA_URL}...")
 llm = ChatOpenAI(
     base_url=OLLAMA_URL,
     model="gpt-oss:20b-cloud",
+    #model="gemma3",
     api_key="ollama",
     temperature=0.0
 )

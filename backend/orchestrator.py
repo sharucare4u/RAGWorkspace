@@ -1,10 +1,15 @@
 """
 Orchestrator — adapted from main_framework.py.
 Returns a structured dict instead of printing to console.
+
+This version adds robust fallbacks so the API does not 500 when the
+local LLM (Ollama/OpenAI-compatible) is unavailable. It tries the LLM
+first and gracefully falls back to rule-based logic.
 """
 import sys
 import os
 import time
+from typing import Optional
 
 # Ensure the POC root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,10 +19,62 @@ from SQL.sql_retrieval import text_to_sql_pipeline
 from Vector_DB.chat import query_vector_db
 from Logs import logs
 
-client = OpenAI(base_url="http://localhost:11434/v1/", api_key="ollama")
+
+# ── OpenAI/Ollama Client ─────────────────────────────────────────────────────
+def _build_client() -> OpenAI:
+    """Construct an OpenAI client using env overrides when present."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1/")
+    api_key = os.getenv("OLLAMA_API_KEY", "ollama")
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+client = _build_client()
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b-cloud")
+#OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3")
+
+
+def _safe_llm(prompt: str, temperature: float = 0.1) -> Optional[str]:
+    """Try an LLM call. On failure, return None instead of raising."""
+    try:
+        resp = client.chat.completions.create(
+            model=OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        print(f"   (LLM) Fallback engaged due to error: {e}")
+        return None
 
 
 # ── Router ─────────────────────────────────────────────────────────────────────
+def _route_fallback(question: str) -> str:
+    """Simple keyword-based router used when LLM is unavailable."""
+    q = question.lower()
+    sql_kw = [
+        "hour", "overtime", "timesheet", "timesheets", "salary", "salaries",
+        "pay", "rate", "rates", "count", "sum", "average", "avg", "median",
+        "min", "max", "date", "week", "month", "year", "join", "group",
+        "department", "gross", "net", "tax", "benefits"
+    ]
+    vec_kw = [
+        "review", "reviews", "feedback", "performance", "summary",
+        "summarise", "summarize", "opinion", "sentiment", "qualitative",
+        "comment", "comments", "strength", "weakness"
+    ]
+
+    has_sql = any(w in q for w in sql_kw)
+    has_vec = any(w in q for w in vec_kw)
+    if has_sql and has_vec:
+        return "BOTH"
+    if has_vec:
+        return "VECTOR"
+    if has_sql:
+        return "SQL"
+    # Default to VECTOR since it’s safer (no DB dependency)
+    return "VECTOR"
+
+
 def decide_route(question: str) -> str:
     prompt = f"""
     You are an Intent Router. Classify the user query into ONE category.
@@ -30,17 +87,15 @@ def decide_route(question: str) -> str:
     
     Output ONLY the category name: SQL, VECTOR, or BOTH.
     """
-    response = client.chat.completions.create(
-        model="gpt-oss:20b-cloud",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
-    )
-    choice = response.choices[0].message.content.strip().upper()
+    choice = _safe_llm(prompt, temperature=0.1)
+    if choice is None:
+        route = _route_fallback(question)
+        print(f"   (Router) LLM unavailable — keyword fallback → {route}")
+        return route
+
+    choice = choice.strip().upper()
     print(f"   (Router) Raw LLM output: '{choice}'")
 
-    # Scan word-by-word for exact category matches.
-    # This prevents a false SQL match when the LLM outputs e.g.
-    # "The answer is VECTOR (not SQL)" — a common model tendency.
     words = [w.strip(".,") for w in choice.split()]
     if "BOTH" in words:
         return "BOTH"
@@ -48,8 +103,6 @@ def decide_route(question: str) -> str:
         return "VECTOR"
     if "SQL" in words:
         return "SQL"
-
-    # Fallback: default to VECTOR (safer — SQL errors surface more visibly)
     print("   (Router) Could not parse response cleanly — defaulting to VECTOR")
     return "VECTOR"
 
@@ -71,26 +124,23 @@ def decompose_query(complex_question: str):
     SQL: [Insert SQL-focused question]
     VECTOR: [Insert Vector-focused question]
     """
-    response = client.chat.completions.create(
-        model="gpt-oss:20b-cloud",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
-    )
-    result = response.choices[0].message.content.strip()
+    result = _safe_llm(prompt, temperature=0.1)
 
-    sql_q, vector_q = "", ""
-    for line in result.split('\n'):
-        if line.startswith("SQL:"):
-            sql_q = line.replace("SQL:", "").strip()
-        elif line.startswith("VECTOR:"):
-            vector_q = line.replace("VECTOR:", "").strip()
+    if result:
+        sql_q, vector_q = "", ""
+        for line in result.split('\n'):
+            if line.startswith("SQL:"):
+                sql_q = line.replace("SQL:", "").strip()
+            elif line.startswith("VECTOR:"):
+                vector_q = line.replace("VECTOR:", "").strip()
+        if not sql_q:
+            sql_q = complex_question
+        if not vector_q:
+            vector_q = complex_question
+        return sql_q, vector_q
 
-    if not sql_q:
-        sql_q = complex_question
-    if not vector_q:
-        vector_q = complex_question
-
-    return sql_q, vector_q
+    # Fallback: simple heuristics
+    return complex_question, complex_question
 
 
 # ── Synthesizer ────────────────────────────────────────────────────────────────
@@ -114,12 +164,22 @@ def synthesize_answer(user_input: str, final_context: str) -> str:
     - Be concise and professional.
     - Use markdown formatting (bold, lists, tables) for clarity.
     """
-    response = client.chat.completions.create(
-        model="gpt-oss:20b-cloud",
-        messages=[{"role": "user", "content": synth_prompt}],
-        temperature=0.7
+    out = _safe_llm(synth_prompt, temperature=0.7)
+    if out is not None:
+        return out
+
+    # Fallback: deterministic, template-based synthesis
+    preview = (final_context or "No context available.").strip()
+    if len(preview) > 800:
+        preview = preview[:800] + "\n… [truncated]"
+    return (
+        "Answer (fallback)\n\n"
+        "- This response was generated without an LLM because the local model endpoint was not reachable.\n"
+        f"- User question: {user_input}\n\n"
+        "Context used:\n"
+        f"{preview}\n\n"
+        "Notes:\n- Numeric facts reflect SQL data when present.\n- Text insights reflect vector search results when present.\n"
     )
-    return response.choices[0].message.content.strip()
 
 
 # ── Main Entry Point ───────────────────────────────────────────────────────────

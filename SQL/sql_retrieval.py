@@ -5,7 +5,7 @@ from openai import OpenAI
 DB_CONFIG = {
     "dbname": "poc",
     "user": "postgres",
-    "password": "",  # <--- REPLACE THIS
+    "password": "Poc1234",  # <--- REPLACE THIS
     "host": "localhost",
     "port": "5432"
 }
@@ -82,6 +82,7 @@ def text_to_sql_pipeline(user_question):
     try:
         response = client.chat.completions.create(
             model="gpt-oss:20b-cloud",
+            #model="gemma3",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
